@@ -24,6 +24,12 @@ AUTH0_CALLBACK_URL = f"{AUTH0_BASE_URL}/login/callback"
 
 # OAuth configuration
 REDIRECT_URI = "com.resideo.firstalert://login.resideo.com/ios/com.resideo.firstalert/callback"
+# The browser-assisted flow uses the app's https callback instead of the custom
+# app scheme. Both are registered for the same client, but the https one lands on
+# a static "Not found." page on login.resideo.com, so the authorization code
+# stays visible in the browser address bar and can be copied without developer
+# tools. The custom scheme never renders a page the user can read the code from.
+BROWSER_REDIRECT_URI = "https://login.resideo.com/ios/com.resideo.firstalert/callback"
 AUDIENCE = "https://resideo-prod.auth0.com/api/v2/"
 SCOPE = "openid profile email offline_access"
 TENANT = "resideo-prod"
@@ -55,9 +61,9 @@ def generate_pkce_pair() -> tuple[str, str, str]:
 def build_authorize_url(code_challenge: str, state: str) -> str:
     """Build the hosted-login authorize URL for the browser-assisted flow.
 
-    This is the same authorize request the First Alert mobile app makes, so the
-    authorization code it returns exchanges for tokens the API client already
-    knows how to refresh.
+    Uses the same app client as the First Alert mobile app, so the code exchanges
+    for tokens the API client already knows how to refresh, but with the https
+    callback so the code lands in the address bar.
     """
     params = {
         "state": state,
@@ -66,7 +72,7 @@ def build_authorize_url(code_challenge: str, state: str) -> str:
         "code_challenge_method": "S256",
         "response_type": "code",
         "audience": AUDIENCE,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": BROWSER_REDIRECT_URI,
         "code_challenge": code_challenge,
         "prompt": "login",
     }
@@ -118,7 +124,7 @@ async def exchange_code_for_tokens(
     token_data = {
         "client_id": OAUTH_CLIENT_ID,
         "code": code,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": BROWSER_REDIRECT_URI,
         "code_verifier": code_verifier,
         "grant_type": "authorization_code",
     }
