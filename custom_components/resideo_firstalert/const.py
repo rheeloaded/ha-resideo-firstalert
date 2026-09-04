@@ -29,6 +29,10 @@ CONF_TOKEN_EXPIRY = "token_expiry"
 
 # Device types
 DEVICE_TYPE_SMOKE_DETECTOR = "SmokeDetector"
+# productFamily reported in the account listing. Accounts can also contain other
+# Resideo devices (for example productFamily "LeakDetector"), which this
+# integration does not model and which have no state endpoint on this API.
+PRODUCT_FAMILY_SMOKE_DETECTOR = "SmokeDetector"
 
 # Alarm states
 ALARM_STATE_IDLE = "idle"

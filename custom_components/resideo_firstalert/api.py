@@ -18,6 +18,7 @@ from .const import (
     DEVICE_TYPE_SMOKE_DETECTOR,
     OAUTH_CLIENT_ID,
     OAUTH_TOKEN_URL,
+    PRODUCT_FAMILY_SMOKE_DETECTOR,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -249,11 +250,27 @@ class ResideoApiClient:
                 location_name = location.get("name", "Unknown")
                 for consumer_device in location.get("consumerDevices", []):
                     device = consumer_device.get("device", {})
+                    product = device.get("product", {})
+                    product_family = product.get("productFamily")
+
+                    # An account can also hold other Resideo devices, such as
+                    # water leak detectors. They are listed here but have no
+                    # state endpoint on this API, so asking for their state just
+                    # returns 404 on every poll. Skip them up front.
+                    if product_family and product_family != PRODUCT_FAMILY_SMOKE_DETECTOR:
+                        _LOGGER.debug(
+                            "Ignoring unsupported %s device (%s)",
+                            product_family,
+                            device.get("globalDeviceType"),
+                        )
+                        continue
+
                     devices.append({
                         "device_id": device.get("deviceId"),
                         "name": consumer_device.get("name", device.get("deviceId")),
                         "location": location_name,
                         "device_type": device.get("globalDeviceType"),
+                        "product_family": product_family,
                         "consumer_device_id": consumer_device.get("id"),
                     })
 
