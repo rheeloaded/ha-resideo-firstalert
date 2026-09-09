@@ -101,6 +101,14 @@ class ResideoConnectionError(ResideoApiError):
     """Connection error."""
 
 
+class ResideoServiceUnavailableError(ResideoConnectionError):
+    """Resideo's API is up but refusing requests, typically for maintenance.
+
+    Subclasses ResideoConnectionError so existing handlers keep treating it as a
+    transient problem worth retrying rather than a configuration failure.
+    """
+
+
 class ResideoApiClient:
     """Client for the Resideo API."""
 
@@ -156,6 +164,11 @@ class ResideoApiClient:
                 # (expired, revoked, or rotated away), which must trigger reauth.
                 if response.status in (401, 403):
                     raise ResideoAuthError("Invalid refresh token")
+                if response.status >= 500:
+                    raise ResideoServiceUnavailableError(
+                        "The Resideo token service is temporarily unavailable "
+                        f"({response.status})"
+                    )
                 if response.status != 200:
                     raise ResideoApiError(
                         f"Token refresh failed with status {response.status}"
@@ -215,6 +228,21 @@ class ResideoApiClient:
                             raise ResideoAuthError("Authentication failed")
                         retry_response.raise_for_status()
                         return await retry_response.json()
+
+                # 5xx means Resideo's side is unhealthy, not that anything is
+                # wrong with the token or the configuration. 503 in particular is
+                # returned during their planned maintenance windows.
+                if response.status >= 500:
+                    text = await response.text()
+                    if response.status == 503:
+                        raise ResideoServiceUnavailableError(
+                            "The Resideo API is temporarily unavailable "
+                            f"(503). Response: {text[:200]}"
+                        )
+                    raise ResideoServiceUnavailableError(
+                        f"The Resideo API returned a server error "
+                        f"({response.status}). Response: {text[:200]}"
+                    )
 
                 if response.status != 200:
                     text = await response.text()
