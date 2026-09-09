@@ -9,5 +9,9 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/aidenmitchell/ha-resideo-firstalert/issues",
   "requirements": ["aiohttp>=3.8.0"],
+<<<<<<< HEAD
   "version": "1.5.0b1"
+=======
+  "version": "1.4.1"
+>>>>>>> browser-assisted-login
 }

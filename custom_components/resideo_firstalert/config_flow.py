@@ -18,7 +18,13 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import ResideoApiClient, ResideoAuthError, ResideoConnectionError
+from .api import (
+    ResideoApiClient,
+    ResideoApiError,
+    ResideoAuthError,
+    ResideoConnectionError,
+    ResideoServiceUnavailableError,
+)
 from .auth import (
     AuthenticationError,
     ResideoAuth,
@@ -142,7 +148,11 @@ class ResideoOAuth2FlowHandler(
                 errors["base"] = "auth_error"
             except ResideoAuthError:
                 errors["base"] = "invalid_auth"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception during browser login")
@@ -216,7 +226,11 @@ class ResideoOAuth2FlowHandler(
                     errors["base"] = "auth_error"
             except ResideoAuthError:
                 errors["base"] = "invalid_auth"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception during login")
@@ -280,7 +294,11 @@ class ResideoOAuth2FlowHandler(
 
             except ResideoAuthError:
                 errors["base"] = "invalid_auth"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
@@ -373,7 +391,11 @@ class ResideoOAuth2FlowHandler(
             except AuthenticationError as err:
                 _LOGGER.error("Browser reauth failed: %s", err)
                 errors["base"] = "auth_error"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception during browser reauth")
@@ -423,7 +445,11 @@ class ResideoOAuth2FlowHandler(
                     errors["base"] = "invalid_auth"
                 else:
                     errors["base"] = "auth_error"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception during reauth")
@@ -471,7 +497,11 @@ class ResideoOAuth2FlowHandler(
 
             except ResideoAuthError:
                 errors["base"] = "invalid_auth"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
@@ -483,9 +513,6 @@ class ResideoOAuth2FlowHandler(
             errors=errors,
         )
 
-
-# Import for API error
-from .api import ResideoApiError
 
 
 class ResideoOptionsFlowHandler(OptionsFlow):
@@ -558,7 +585,11 @@ class ResideoOptionsFlowHandler(OptionsFlow):
 
             except ResideoAuthError:
                 errors["base"] = "invalid_auth"
+            except ResideoServiceUnavailableError:
+                errors["base"] = "service_unavailable"
             except ResideoConnectionError:
+                errors["base"] = "cannot_connect"
+            except ResideoApiError:
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
