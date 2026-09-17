@@ -15,8 +15,12 @@ from .const import (
     API_ACCOUNTS_ENDPOINT,
     API_BASE_URL,
     API_DEVICE_STATE_ENDPOINT,
+    API_SUBSCRIPTION_KEY,
+    API_USER_AGENT,
+    DEVICE_TYPE_SMOKE_DETECTOR,
     OAUTH_CLIENT_ID,
     OAUTH_TOKEN_URL,
+    PRODUCT_FAMILY_SMOKE_DETECTOR,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -208,6 +212,9 @@ class ResideoApiClient:
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            # Both required on every api.ha.resideo.com call, not just writes - see const.py.
+            "Ocp-Apim-Subscription-Key": API_SUBSCRIPTION_KEY,
+            "User-Agent": API_USER_AGENT,
         }
 
         url = f"{API_BASE_URL}{endpoint}"
@@ -276,11 +283,27 @@ class ResideoApiClient:
                 location_name = location.get("name", "Unknown")
                 for consumer_device in location.get("consumerDevices", []):
                     device = consumer_device.get("device", {})
+                    product = device.get("product", {})
+                    product_family = product.get("productFamily")
+
+                    # An account can also hold other Resideo devices, such as
+                    # water leak detectors. They are listed here but have no
+                    # state endpoint on this API, so asking for their state just
+                    # returns 404 on every poll. Skip them up front.
+                    if product_family and product_family != PRODUCT_FAMILY_SMOKE_DETECTOR:
+                        _LOGGER.debug(
+                            "Ignoring unsupported %s device (%s)",
+                            product_family,
+                            device.get("globalDeviceType"),
+                        )
+                        continue
+
                     devices.append({
                         "device_id": device.get("deviceId"),
                         "name": consumer_device.get("name", device.get("deviceId")),
                         "location": location_name,
                         "device_type": device.get("globalDeviceType"),
+                        "product_family": product_family,
                         "consumer_device_id": consumer_device.get("id"),
                     })
 
@@ -298,11 +321,27 @@ class ResideoApiClient:
 
             try:
                 state_data = await self.get_device_state(device_id)
-                states[device_id] = self._parse_device_state(state_data, device)
             except ResideoApiError as err:
                 _LOGGER.warning(
                     "Failed to get state for device %s: %s", device_id, err
                 )
+                continue
+
+            # This integration only models smoke/CO detectors. An account may
+            # also hold other Resideo devices (water valves, thermostats); if
+            # the API reports a device as a different type, skip it rather than
+            # present it as a smoke detector. A missing type is treated as a
+            # smoke detector so genuine detectors are never dropped.
+            reported_type = state_data.get("deviceType")
+            if reported_type and reported_type != DEVICE_TYPE_SMOKE_DETECTOR:
+                _LOGGER.debug(
+                    "Skipping unsupported device %s of type %s",
+                    device_id,
+                    reported_type,
+                )
+                continue
+
+            states[device_id] = self._parse_device_state(state_data, device)
 
         return states
 

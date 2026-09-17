@@ -45,13 +45,23 @@ Content-Type: application/json
 
 ## API Endpoints
 
-Base URL: `https://api.resideo.com`
+Base URL: `https://api.ha.resideo.com`
+
+> **Moved in Sept 2026.** The old base URL, `https://api.resideo.com`, is retired, not down —
+> it now answers every call with a canned `{"statusCode":503,"message":"The API is
+> temporarily down for planned maintenance."}`, indefinitely, regardless of Resideo's own
+> status page (which shows no incident). Paths are unchanged at the new host; two extra
+> headers are required on every call (see below). Confirmed live 2026-09-16. Credit:
+> [sfcodes/ha-resideo v0.3.0](https://github.com/sfcodes/ha-resideo/releases/tag/v0.3.0),
+> which mapped the same host move for Resideo's thermostat/leak-detector API surface.
 
 All requests require:
 ```http
 Authorization: Bearer <access_token>
 Content-Type: application/json
 Accept: application/json
+Ocp-Apim-Subscription-Key: b60885e8a9b44680a29ea1f03452878a
+User-Agent: First Alert/2440 CFNetwork/3860.600.12 Darwin/25.5.0
 ```
 
 ### Get Account Information
@@ -279,9 +289,40 @@ POST /ds-activity-feed-api/api/v1/app/events
 
 ## Device Types
 
-| `globalDeviceType` | Description |
-|-------------------|-------------|
-| `Citadel_SC5` | First Alert Safe & Sound Smart Smoke/CO Alarm (SMCO600NVACA) |
+| `globalDeviceType` | `productFamily` | `productPlatform` | Description |
+|-------------------|-----------------|-------------------|-------------|
+| `Citadel_SC5` | `SmokeDetector` | `Citadel` | First Alert Safe & Sound Smart Smoke/CO Alarm (SMCO600NVACA) |
+| `LeakDetector_L1_R` | `LeakDetector` | `WLD3_RETAIL` | Water leak detector. Listed on the account but **not supported by this API**, see below |
+
+### Devices without a state endpoint
+
+An account can contain devices this API does not serve. Water leak detectors
+appear in the `/accounts` response with full product metadata, but there is no
+state endpoint for them on `ris-public-api`. Requesting their state from the
+smoke detector endpoint returns:
+
+```json
+[{"ErrorCode":"DeviceNotInScaleUnit","Message":"DeviceId: ..."}]
+```
+
+Note the difference between the two 404 bodies, it is a useful signal:
+
+- `{"statusCode":404,"message":"Resource not found"}` means the **path** does not
+  exist. Every non smoke device collection tried (`leakDetectors`,
+  `waterLeakDetectors`, `thermostats`, `waterValves`, and others, across `v1`,
+  `v2` and `v3` and several service prefixes) returns this.
+- `DeviceNotInScaleUnit` means the **path exists** but the device is served by a
+  different backend.
+
+Because of this, the integration filters devices by `productFamily` when reading
+the account, so unsupported devices are never queried and never appear as smoke
+detectors.
+
+Leak detectors and thermostats are served by Resideo's separate Honeywell Home
+developer API (`api.honeywellhome.com`), which has live `waterLeakDetectors`,
+`thermostats` and `shutoffvalve` endpoints. That API uses its own OAuth
+registration, so supporting those devices means a separate integration rather
+than an extension of this one.
 
 ---
 
@@ -294,26 +335,37 @@ tells you whether a problem is specific to us or Resideo wide.
 | Surface | Base | Used for |
 |---------|------|----------|
 | Auth | `login.resideo.com` | Auth0 login and token refresh |
-| REST | `api.resideo.com/ris-public-api` | Account listing and smoke detector state, what this integration uses |
-| REST | `api.resideo.com/devsrv` | Device state and commands, needs an Azure APIM subscription key header |
-| Push | `ds-notification-service.prod.titans.cloud` | Azure SignalR real time events |
+| REST | `api.ha.resideo.com/ris-public-api` | Account listing and smoke detector state, what this integration uses |
+| REST | `api.ha.resideo.com` (`devsrv`'s old routes) | Device state and commands, needs an Azure APIM subscription key header |
+| Push | `api.ha.resideo.com/ds-notification-service` | Azure SignalR real time events |
 
-The `devsrv` service and the SignalR channel were mapped by the
+`api.resideo.com` — the host all three REST/push rows above used to live under
+— was retired around Sept 2026; see "Moved in Sept 2026" above. The `devsrv`
+service and the SignalR channel were mapped by the
 [sfcodes/ha-resideo](https://github.com/sfcodes/ha-resideo) project, which
-documents the APIM key and the SignalR handshake in detail.
+documents the APIM key and the SignalR handshake in detail, including that
+`devsrv`'s routes were split across the new host's `ris-public-api` v1/v2
+paths rather than kept as a separate standalone service.
 
 ### Telling an outage apart from a retirement
 
-The gateway answers differently depending on whether a route exists, which makes
-diagnosis easy without any credentials.
+The gateway answers differently depending on whether a route exists, which
+usually makes diagnosis easy without any credentials — **with one important
+exception, learned the hard way during the Sept 2026 host move below.**
 
 - `{"statusCode":404,"message":"Resource not found"}` means the **path is not
-  registered**. Made up paths and retired routes look like this.
+  registered**. Made up paths look like this.
 - `{"statusCode":503,"message":"The API is temporarily down for planned
-  maintenance..."}` means the **route exists** but its backend is flagged down.
+  maintenance..."}` normally means the **route exists** but its backend is
+  flagged down temporarily.
 
-So a 503 on a route you know is real indicates a live outage, not a removal. A
-retired endpoint would 404.
+That second rule turned out not to be reliable. Starting 2026-09-09,
+`api.resideo.com` returned that exact 503 on every call, indefinitely, for
+every client, with no real maintenance window behind it — the host had been
+retired, not temporarily downed, but the gateway kept answering as if it were
+a transient outage rather than 404ing or reporting the move. **A persistent
+503 that doesn't clear after a reasonable window is worth checking for a
+retired/moved host, not just waiting out.**
 
 Two more things worth knowing during an outage.
 
@@ -398,14 +450,14 @@ class ResideoClient:
 
     def get_accounts(self):
         resp = requests.get(
-            "https://api.resideo.com/ris-public-api/api/v1/accounts",
+            "https://api.ha.resideo.com/ris-public-api/api/v1/accounts",
             headers=self._headers()
         )
         return resp.json()
 
     def get_device_state(self, device_id: str):
         resp = requests.get(
-            f"https://api.resideo.com/ris-public-api/api/v2/devices/smokeDetectors/{device_id}/state",
+            f"https://api.ha.resideo.com/ris-public-api/api/v2/devices/smokeDetectors/{device_id}/state",
             headers=self._headers()
         )
         return resp.json()
